@@ -261,19 +261,15 @@ impl HttpFilter for VmcpManagerFilter {
             return Ok(FilterAction::Continue);
         }
 
-        let env_id = ctx.request.headers
-            .get("x-skillberry-env-id")
-            .and_then(|v| v.to_str().ok())
+        let env_id = ctx.filter_metadata
+            .get("env_id")
             .ok_or_else(|| {
-                tracing::error!("x-skillberry-env-id not found in request headers");
-                FilterError::from("x-skillberry-env-id is required but not found in request headers")
+                tracing::error!("env_id not found in filter_metadata — is context_extractor configured?");
+                FilterError::from("env_id is required in filter_metadata (set by context_extractor)")
             })?
-            .to_string();
+            .clone();
 
-        let skill_uuid_owned = ctx.request.headers
-            .get("x-skillberry-skill-uuid")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
+        let skill_uuid_owned = ctx.filter_metadata.get("skill_uuid").cloned();
         let skill_uuid = skill_uuid_owned.as_deref();
         let vmcp_name = self.generate_vmcp_name(&env_id);
 
@@ -292,16 +288,16 @@ impl HttpFilter for VmcpManagerFilter {
                     vmcp_port = %vmcp.port,
                     "VMCP server created successfully"
                 );
-                ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-vmcp-uuid"), vmcp.uuid.clone()));
-                ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-vmcp-name"), vmcp.name.clone()));
-                ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-vmcp-port"), vmcp.port.to_string()));
+                ctx.filter_metadata.insert("vmcp_uuid".to_string(), vmcp.uuid.clone());
+                ctx.filter_metadata.insert("vmcp_name".to_string(), vmcp.name.clone());
+                ctx.filter_metadata.insert("vmcp_port".to_string(), vmcp.port.to_string());
 
                 if let Some(ref tools) = vmcp.runtime_tools {
                     if let Some(tools_array) = tools.as_array() {
-                        ctx.extra_request_headers.push((
-                            std::borrow::Cow::Borrowed("x-skillberry-vmcp-tools-count"),
+                        ctx.filter_metadata.insert(
+                            "vmcp_tools_count".to_string(),
                             tools_array.len().to_string(),
-                        ));
+                        );
                     }
                 }
                 vmcp
@@ -320,7 +316,7 @@ impl HttpFilter for VmcpManagerFilter {
                         tracing::error!(error = %e, "failed to serialize MCP tools");
                         FilterError::from(format!("failed to serialize tools: {e}"))
                     })?;
-                ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-mcp-tools"), tools_json));
+                ctx.filter_metadata.insert("mcp_tools".to_string(), tools_json);
                 Ok(FilterAction::Continue)
             }
             Err(e) => {

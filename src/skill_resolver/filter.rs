@@ -173,8 +173,8 @@ impl HttpFilter for SkillResolverFilter {
                 skill_uuid = %skill_uuid,
                 "using skill UUID from environment variable"
             );
-            ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-uuid"), skill_uuid));
-            ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-resolution-method"), "env_uuid".to_string()));
+            ctx.filter_metadata.insert("skill_uuid".to_string(), skill_uuid);
+            ctx.filter_metadata.insert("skill_resolution_method".to_string(), "env_uuid".to_string());
             return Ok(FilterAction::Continue);
         }
 
@@ -192,9 +192,9 @@ impl HttpFilter for SkillResolverFilter {
                         skill_uuid = %skill.uuid,
                         "successfully resolved skill UUID"
                     );
-                    ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-uuid"), skill.uuid));
-                    ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-name"), skill_name));
-                    ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-resolution-method"), "api_lookup".to_string()));
+                    ctx.filter_metadata.insert("skill_uuid".to_string(), skill.uuid);
+                    ctx.filter_metadata.insert("skill_name".to_string(), skill_name);
+                    ctx.filter_metadata.insert("skill_resolution_method".to_string(), "api_lookup".to_string());
                     return Ok(FilterAction::Continue);
                 }
                 Err(e) => {
@@ -203,7 +203,7 @@ impl HttpFilter for SkillResolverFilter {
                         error = %e,
                         "failed to resolve skill, continuing without skill"
                     );
-                    ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-resolution-error"), e.to_string()));
+                    ctx.filter_metadata.insert("skill_resolution_error".to_string(), e.to_string());
                     return Ok(FilterAction::Continue);
                 }
             }
@@ -211,7 +211,7 @@ impl HttpFilter for SkillResolverFilter {
 
         // Priority 3: Neither UUID nor name set
         tracing::debug!("no skill UUID or name configured, continuing without skill");
-        ctx.extra_request_headers.push((std::borrow::Cow::Borrowed("x-skillberry-skill-resolution-method"), "none".to_string()));
+        ctx.filter_metadata.insert("skill_resolution_method".to_string(), "none".to_string());
         Ok(FilterAction::Continue)
     }
 

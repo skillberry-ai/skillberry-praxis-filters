@@ -87,12 +87,9 @@ impl HttpFilter for McpToolsEnricherFilter {
             return Ok(FilterAction::Continue);
         };
 
-        // Get tools from header (set by vmcp_manager via x-skillberry-mcp-tools)
-        let tools_json_owned = match ctx.request.headers
-            .get("x-skillberry-mcp-tools")
-            .and_then(|v| v.to_str().ok())
-        {
-            Some(json) => json.to_string(),
+        // Get tools from filter_metadata (set by vmcp_manager)
+        let tools_json_owned = match ctx.filter_metadata.get("mcp_tools") {
+            Some(json) => json.clone(),
             None => return Ok(FilterAction::Continue),
         };
 
