@@ -1,5 +1,7 @@
 # skillberry-praxis-filters
 
+> ⚠️ **Work in Progress** — This repository is actively evolving. Features, APIs, and configuration may change at any time. Please monitor it frequently for updates.
+
 External [Praxis](https://github.com/praxis-proxy/praxis) filters for the Skillberry ecosystem.
 
 ## Filters
