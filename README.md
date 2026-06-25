@@ -33,32 +33,72 @@ These filters are designed to work together in sequence:
 
 ## Configuration
 
+Full Praxis configuration (`praxis.yaml`):
+
 ```yaml
-filters:
-  - filter: context_extractor
-    headers:
-      - name: x-skillberry-env-id
-        metadata_key: env_id
-        default: "default-env"
-        required: true
-        pattern: "^[a-zA-Z0-9_-]+$"
-        max_length: 64
+listeners:
+  - name: skillberry_proxy
+    address: 0.0.0.0:8080
+    filter_chains:
+      - skillberry_chain
 
-  - filter: skill_resolver
-    store_base_url: "http://localhost:8000"
-    skill_uuid_env: "SKILL_UUID"
-    skill_name_env: "SKILL_NAME"
-    timeout_ms: 5000
+filter_chains:
+  - name: skillberry_chain
+    filters:
+      - filter: context_extractor
+        headers:
+          - name: x-skillberry-env-id
+            metadata_key: env_id
+            default: "default-env"
+            required: true
+            pattern: "^[a-zA-Z0-9_-]+$"
+            max_length: 64
+          - name: x-skillberry-user-id
+            metadata_key: user_id
+            default: "anonymous"
+            required: false
+            pattern: "^[a-zA-Z0-9_-]+$"
+            max_length: 64
+          - name: x-skillberry-session-id
+            metadata_key: session_id
+            required: false
+            pattern: "^[a-zA-Z0-9_-]+$"
+            max_length: 128
 
-  - filter: vmcp_manager
-    store_base_url: "http://localhost:8000"
-    vmcp_name_template: "vmcp-{env_id}"
-    always_create: true
-    timeout_ms: 10000
+      - filter: skill_resolver
+        store_base_url: "http://localhost:8000"
+        skill_uuid_env: "SKILL_UUID"
+        skill_name_env: "SKILL_NAME"
+        timeout_ms: 5000
 
-  - filter: mcp_tools_enricher
-    timeout_ms: 5000
-    tool_choice: auto
-    max_body_bytes: 10485760
-    on_invalid: continue
+      - filter: vmcp_manager
+        store_base_url: "http://localhost:8000"
+        vmcp_name_template: "vmcp-{env_id}"
+        timeout_ms: 10000
+        always_create: true
+        cleanup_on_error: false
+
+      - filter: mcp_tools_enricher
+        timeout_ms: 5000
+        tool_choice: auto
+        max_body_bytes: 10485760
+        on_invalid: continue
+
+      - filter: router
+        routes:
+          - path_prefix: "/"
+            cluster: llm_backend
+
+      - filter: load_balancer
+        clusters:
+          - name: llm_backend
+            endpoints:
+              - "localhost:4000"
+            connection_timeout_ms: 5000
+            read_timeout_ms: 60000
+            write_timeout_ms: 60000
+
+runtime:
+  threads: 4
+  max_connections: 10000
 ```
