@@ -79,18 +79,32 @@ impl HttpFilter for McpToolsEnricherFilter {
         body: &mut Option<Bytes>,
         end_of_stream: bool,
     ) -> Result<FilterAction, FilterError> {
+        tracing::trace!("mcp_tools_enricher: on_request_body called end_of_stream={end_of_stream}");
+
         if !end_of_stream {
             return Ok(FilterAction::Continue);
         }
 
         let Some(raw) = body.as_ref() else {
+            tracing::warn!("mcp_tools_enricher: body is None at end_of_stream — skipping enrichment");
             return Ok(FilterAction::Continue);
         };
 
+        tracing::debug!(
+            metadata_keys = ?ctx.filter_metadata.keys().collect::<Vec<_>>(),
+            "mcp_tools_enricher: filter_metadata at body phase"
+        );
+
         // Get tools from filter_metadata (set by vmcp_manager)
         let tools_json_owned = match ctx.filter_metadata.get("mcp_tools") {
-            Some(json) => json.clone(),
-            None => return Ok(FilterAction::Continue),
+            Some(json) => {
+                tracing::debug!(len = json.len(), "mcp_tools_enricher: found mcp_tools in metadata");
+                json.clone()
+            },
+            None => {
+                tracing::warn!("mcp_tools_enricher: mcp_tools not found in filter_metadata — vmcp_manager may not have run");
+                return Ok(FilterAction::Continue);
+            },
         };
 
         let tools: Vec<serde_json::Value> = match serde_json::from_str(&tools_json_owned) {
