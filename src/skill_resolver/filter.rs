@@ -6,7 +6,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -148,25 +147,14 @@ impl HttpFilter for SkillResolverFilter {
     }
 
     fn request_body_access(&self) -> BodyAccess {
-        BodyAccess::ReadOnly
+        BodyAccess::None
     }
 
     fn request_body_mode(&self) -> BodyMode {
-        BodyMode::StreamBuffer {
-            max_bytes: Some(10_485_760),
-        }
+        BodyMode::Stream
     }
 
-    async fn on_request_body(
-        &self,
-        ctx: &mut HttpFilterContext<'_>,
-        _body: &mut Option<Bytes>,
-        end_of_stream: bool,
-    ) -> Result<FilterAction, FilterError> {
-        if !end_of_stream {
-            return Ok(FilterAction::Continue);
-        }
-
+    async fn on_request(&self, ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
         // Priority 1: Check for direct UUID in environment
         if let Some(skill_uuid) = self.get_skill_uuid_from_env() {
             tracing::info!(
@@ -212,10 +200,6 @@ impl HttpFilter for SkillResolverFilter {
         // Priority 3: Neither UUID nor name set
         tracing::debug!("no skill UUID or name configured, continuing without skill");
         ctx.filter_metadata.insert("skill_resolution_method".to_string(), "none".to_string());
-        Ok(FilterAction::Continue)
-    }
-
-    async fn on_request(&self, _ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
         Ok(FilterAction::Continue)
     }
 }
