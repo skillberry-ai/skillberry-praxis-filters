@@ -4,13 +4,11 @@
 //! Context extractor filter implementation.
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use regex::Regex;
 
 use super::config::{ContextExtractorConfig, HeaderExtractionRule, ValidationRules};
 use praxis_filter::{
     FilterAction, FilterError,
-    BodyAccess, BodyMode,
     parse_filter_config,
     HttpFilter, HttpFilterContext,
 };
@@ -96,28 +94,7 @@ impl HttpFilter for ContextExtractorFilter {
         "context_extractor"
     }
 
-    fn request_body_access(&self) -> BodyAccess {
-        BodyAccess::ReadOnly
-    }
-
-    fn request_body_mode(&self) -> BodyMode {
-        BodyMode::StreamBuffer { max_bytes: Some(10_485_760) }
-    }
-
-    async fn on_request(&self, _ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
-        Ok(FilterAction::Continue)
-    }
-
-    async fn on_request_body(
-        &self,
-        ctx: &mut HttpFilterContext<'_>,
-        _body: &mut Option<Bytes>,
-        end_of_stream: bool,
-    ) -> Result<FilterAction, FilterError> {
-        if !end_of_stream {
-            return Ok(FilterAction::Continue);
-        }
-
+    async fn on_request(&self, ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
         for compiled in &self.rules {
             let rule = &compiled.rule;
 
