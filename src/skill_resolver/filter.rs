@@ -6,12 +6,14 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use reqwest::Client;
 use serde::Deserialize;
 
 use super::config::SkillResolverConfig;
 use praxis_filter::{
     FilterAction, FilterError,
+    BodyAccess, BodyMode,
     parse_filter_config,
     HttpFilter, HttpFilterContext,
 };
@@ -26,14 +28,24 @@ struct SkillResponse {
     description: Option<String>,
 }
 
-/// Resolves skill UUIDs from environment variables.
+/// Resolves the skill to apply to this request.
 ///
-/// This filter reads SKILL_UUID or SKILL_NAME from environment variables
-/// and resolves them to a skill UUID. If SKILL_NAME is provided, it makes
-/// an HTTP request to the skillberry-store to lookup the UUID.
+/// Runs in `on_request_body` so that future iterations can inspect the full
+/// incoming chat messages (e.g. the `messages` array in an OpenAI
+/// `/v1/chat/completions` body) to pick the right skill dynamically.
 ///
-/// The resolved UUID is stored in the `x-skillberry-skill-uuid` request header
-/// for use by downstream filters (e.g., vmcp_manager).
+/// **Current behaviour** (env-variable-only):
+/// 1. `SKILL_UUID` env var → use directly.
+/// 2. `SKILL_NAME` env var → look up UUID via `GET {store_base_url}/skills/{name}`.
+/// 3. Neither set → continue without a skill.
+///
+/// **Planned extension**: once the body is available the filter will parse the
+/// `messages` array and select the best-matching skill from the store based on
+/// message content, making static env-var configuration optional.
+///
+/// Writes `skill_uuid`, `skill_name`, `skill_resolution_method` (and
+/// `skill_resolution_error` on failure) into `ctx.filter_metadata` for use by
+/// downstream filters (`vmcp_manager`, `mcp_tools_enricher`).
 pub struct SkillResolverFilter {
     http_client: Client,
     store_base_url: String,
@@ -145,7 +157,35 @@ impl HttpFilter for SkillResolverFilter {
         "skill_resolver"
     }
 
-    async fn on_request(&self, ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
+    fn request_body_access(&self) -> BodyAccess {
+        // ReadOnly today; will be upgraded to ReadWrite once the filter parses
+        // and potentially rewrites messages for skill matching.
+        BodyAccess::ReadOnly
+    }
+
+    fn request_body_mode(&self) -> BodyMode {
+        // Buffer the full body so future logic can inspect the `messages` array.
+        BodyMode::StreamBuffer {
+            max_bytes: Some(10_485_760),
+        }
+    }
+
+    /// Runs once the complete request body has been received.
+    ///
+    /// Currently resolves the skill from environment variables only.
+    /// The `_body` parameter is not yet inspected but will be used in a future
+    /// iteration to read the incoming chat messages and select the best
+    /// matching skill dynamically.
+    async fn on_request_body(
+        &self,
+        ctx: &mut HttpFilterContext<'_>,
+        _body: &mut Option<Bytes>,
+        end_of_stream: bool,
+    ) -> Result<FilterAction, FilterError> {
+        if !end_of_stream {
+            return Ok(FilterAction::Continue);
+        }
+
         // Priority 1: Check for direct UUID in environment
         if let Some(skill_uuid) = self.get_skill_uuid_from_env() {
             tracing::info!(
@@ -191,6 +231,10 @@ impl HttpFilter for SkillResolverFilter {
         // Priority 3: Neither UUID nor name set
         tracing::debug!("no skill UUID or name configured, continuing without skill");
         ctx.filter_metadata.insert("skill_resolution_method".to_string(), "none".to_string());
+        Ok(FilterAction::Continue)
+    }
+
+    async fn on_request(&self, _ctx: &mut HttpFilterContext<'_>) -> Result<FilterAction, FilterError> {
         Ok(FilterAction::Continue)
     }
 }
